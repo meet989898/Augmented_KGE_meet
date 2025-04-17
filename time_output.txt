@@ -1,0 +1,32 @@
+Testing 5.WN18
+Benchmarking corruption mode: LCWA
+	Testing TripleManager train_manager with 141442 triples
+	Time Taken: 0 Hours, 0 Minutes, and 48.046 seconds.
+
+	Testing TripleManager valid_manager with 5000 triples
+	Time Taken: 0 Hours, 0 Minutes, and 1.919 seconds.
+
+	Testing TripleManager test_manager with 5000 triples
+	Time Taken: 0 Hours, 0 Minutes, and 1.798 seconds.
+
+Benchmarking corruption mode: sensical
+	Testing TripleManager train_manager with 141442 triples
+	Time Taken: 0 Hours, 7 Minutes, and 13.532 seconds.
+
+	Testing TripleManager valid_manager with 5000 triples
+	Time Taken: 0 Hours, 0 Minutes, and 15.831 seconds.
+
+	Testing TripleManager test_manager with 5000 triples
+	Time Taken: 0 Hours, 0 Minutes, and 17.230 seconds.
+
+Benchmarking corruption mode: nonsensical
+	Testing TripleManager train_manager with 141442 triples
+	Time Taken: 0 Hours, 7 Minutes, and 34.286 seconds.
+
+	Testing TripleManager valid_manager with 5000 triples
+	Time Taken: 0 Hours, 0 Minutes, and 16.861 seconds.
+
+	Testing TripleManager test_manager with 5000 triples
+	Time Taken: 0 Hours, 0 Minutes, and 16.493 seconds.
+
+Total Time Taken: 0.0 Hours, 16.0 Minutes, and 48.754257678985596 seconds.
