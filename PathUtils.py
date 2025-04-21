@@ -1,6 +1,8 @@
 import os
 import glob
 import re
+import csv
+import json
 import DatasetUtils
 
 # Update this per machine/environment
@@ -74,8 +76,31 @@ def get_reshuffleId(test_file, split_type):
     return reshuffle_id
 
 
-def get_original_files(dataset_folder):
+def get_entities(path):
+    entities = set()
+    with open(os.path.dirname(path) + "\\entity2id.txt", encoding='utf-8') as fp:
+        for line in fp:
+            entity_id = line.strip().split()
 
+            if len(entity_id) != 2:
+                continue
+
+            entities.add(int(entity_id[1]))
+
+    return entities
+
+
+def check_folder_existence(folder_path):
+    """
+    Checks if a folder exists at the given path.
+
+    :param folder_path: Absolute or relative path to a folder
+    :return: True if folder exists, False otherwise
+    """
+    return os.path.isdir(folder_path)
+
+
+def get_original_files(dataset_folder):
     train_file = [
         f for f in glob.glob(os.path.join(dataset_folder, "*train2id.txt"))
         if re.match(r"^[A-Za-z]", os.path.basename(f))
@@ -119,7 +144,6 @@ def get_original_files(dataset_folder):
 
 
 def get_policy_output_files(dataset, test_file, output_folder):
-
     dataset_name = DatasetUtils.get_dataset_name(dataset)
 
     reshuffle_ID = get_reshuffleId(test_file, "test")
@@ -134,3 +158,53 @@ def get_policy_output_files(dataset, test_file, output_folder):
         output_files.append(output_file)
 
     return output_files
+
+
+def write_qrel_rows(file_path, rows):
+    """
+    Writes a list of qrel rows to the specified file.
+
+    :param file_path: Path to the output TSV file
+    :param rows: List of rows, each row is [query_id, entity_id, score]
+    """
+    with open(file_path, "a", newline='') as f:
+        writer = csv.writer(f, delimiter='\t')
+        writer.writerows(rows)
+
+
+def write_json_file(file_path, data):
+    """
+    Writes a dictionary to a JSON file.
+
+    :param file_path: Path to the JSON output file
+    :param data: Dictionary or JSON-serializable object to write
+    """
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+
+def parse_run_filename(filename):
+    """
+    Parses the run filename to extract model, resplit index, and partition (top/bottom).
+
+    :param filename: e.g., 'boxe_resplit__23_top.tsv'
+    :return: dict with model, resplit, partition, filename
+    """
+    base = os.path.basename(filename)
+    match = re.match(r"(?P<model>[^_]+)_resplit__?(?P<resplit>\\d+)_?(?P<partition>top|bottom)?\\.tsv", base)
+
+    if match:
+        return {
+            "filename": base,
+            "model": match.group("model"),
+            "resplit": match.group("resplit"),
+            "partition": match.group("partition") or "unknown"
+        }
+    else:
+        return {
+            "filename": base,
+            "model": "unknown",
+            "resplit": "unknown",
+            "partition": "unknown"
+        }

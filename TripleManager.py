@@ -1,6 +1,7 @@
 import numpy as np
 from collections import defaultdict
 from DataLoader import DataLoader
+from CompatibleRelationsGenerator import CompatibleRelationsGenerator
 import DatasetUtils
 import time
 
@@ -29,6 +30,18 @@ class TripleManager:
         # Convert sets to NumPy arrays for efficiency
         self._convert_to_numpy()
 
+        # Generate compatible relations using existing dictionaries
+        generator = CompatibleRelationsGenerator(self.head_dict, self.tail_dict, self.domain, self.range, 0.75)
+        # generator.generate() # This is for when we want to use the default values and save file
+        # This is where it takes the parameters for the compatible relations
+        # Parameters like Threshold and Method0
+        generator.compute_compatible_relations()
+
+        self.dom_dom = generator.domDomCompatible
+        self.dom_ran = generator.domRanCompatible
+        self.ran_dom = generator.ranDomCompatible
+        self.ran_ran = generator.ranRanCompatible
+
         # Get the pre-made compatible relations dictionaries
         self.compatible_relations = self._build_compatible_relations()
 
@@ -51,10 +64,10 @@ class TripleManager:
             for r, range_entities in loader.range.items():
                 self.range[r].update(range_entities)
 
-        self.dom_dom = self.main_loader.domDomCompatible
-        self.dom_ran = self.main_loader.domRanCompatible
-        self.ran_dom = self.main_loader.ranDomCompatible
-        self.ran_ran = self.main_loader.ranRanCompatible
+        # self.dom_dom = self.main_loader.domDomCompatible
+        # self.dom_ran = self.main_loader.domRanCompatible
+        # self.ran_dom = self.main_loader.ranDomCompatible
+        # self.ran_ran = self.main_loader.ranRanCompatible
 
     def _convert_to_numpy(self):
         """Converts sets in dictionaries to NumPy arrays for optimized operations."""
@@ -82,8 +95,7 @@ class TripleManager:
         :return: Dictionary {(r, elem_type): [(r', elem_type'), ...]}
         """
         compat = {}
-        all_relations = set(self.dom_dom.keys()) | set(self.dom_ran.keys()) | \
-                        set(self.ran_dom.keys()) | set(self.ran_ran.keys())
+        all_relations = set(self.dom_dom.keys()) | set(self.dom_ran.keys()) | set(self.ran_dom.keys()) | set(self.ran_ran.keys())
 
         for r in all_relations:
             domain_compat = []
@@ -149,7 +161,7 @@ class TripleManager:
                 return np.setdiff1d(self.entities, self.head_dict[r].get(t, np.empty(0)), assume_unique=True)
 
         elif corruption_mode == 'sensical':
-            if corruption_type == 'tail':#
+            if corruption_type == 'tail':  #
                 # self.get_elements(r, "range", self.domain, self.range)
                 # self.get_extended_elements(r, "range", self.compatible_dict, self.domain, self.range)
                 return np.setdiff1d(self.range[r], self.tail_dict[r].get(h, np.array([])), assume_unique=True)

@@ -1,6 +1,5 @@
-import os
 import numpy as np
-from CompatibleRelationsGenerator import CompatibleRelationsGenerator
+import PathUtils
 
 
 class DataLoader(object):
@@ -10,7 +9,6 @@ class DataLoader(object):
         # split_type (str): Type of split to load. Type can be "train", "test", "valid"
         self.path = path
         self.split_type = split_type
-        self.entities = set()
         self.head_entities = set()
         self.tail_entities = set()
         self.relations = set()
@@ -24,26 +22,10 @@ class DataLoader(object):
         self.ranRanCompatible = {}
         self.triple_count_by_pred = {}
 
-        with open(os.path.dirname(path) + "\\entity2id.txt", encoding='utf-8') as fp:
-            for line in fp:
-                entity_id = line.strip().split()
-
-                if len(entity_id) != 2:
-                    continue
-
-                self.entities.add(int(entity_id[1]))
+        self.entities = PathUtils.get_entities(self.path)
 
         self.triple_list = []
         self.import_file(path + split_type + "2id.txt")
-
-        # Generate compatible relations using existing dictionaries
-        generator = CompatibleRelationsGenerator(self.head_dict, self.tail_dict, self.domain, self.range, 0.75)
-        generator.generate()
-
-        self.domDomCompatible = generator.domDomCompatible
-        self.domRanCompatible = generator.domRanCompatible
-        self.ranDomCompatible = generator.ranDomCompatible
-        self.ranRanCompatible = generator.ranRanCompatible
 
         print(f"DL {split_type} Created")
 

@@ -1,15 +1,28 @@
+import sys
 import time
 from DataLoader import DataLoader
 from TripleManager import TripleManager
 import GenerateQrels
 import DatasetUtils
-import PathUtils
+import PathUtils as pu
 import os
 import glob
 import re
 
+# Define the main 3 folders to be used here to generate the qrels
+main_folder = "D:\\Masters\\RIT\\Semesters\\Sem 4\\RA\\Augmented KGE\\General Tests\\"
 
-main_folder = "D:\\Masters\\RIT\\Semesters\\Sem 4\\RA\\Augmented KGE\\"
+reshuffled_all_datasets_folder = main_folder + "Datasets_Reshuffling\\"
+
+output_folder = main_folder + f"Generated_Qrels_TSV\\"
+
+# Check if the base folder for the reshuffled datasets exists - needs to exist
+if not pu.check_folder_existence(reshuffled_all_datasets_folder):
+    print(f"Dataset Folder {reshuffled_all_datasets_folder} not found")
+    sys.exit()
+
+# Ensure the output folder exists - if not created, it's fine. New folder created here
+os.makedirs(output_folder, exist_ok=True)
 
 
 def generate_qrels(dataset):
@@ -19,14 +32,18 @@ def generate_qrels(dataset):
     dataset_name = DatasetUtils.get_dataset_name(dataset)
     print(f"\nGenerating Qrels for dataset {dataset}.{dataset_name}")
 
-    reshuffled_dataset_folder = main_folder + "General Tests\\Datasets_Reshuffling\\" + dataset_name + "\\"
+    reshuffled_dataset_folder = reshuffled_all_datasets_folder + dataset_name + "\\"
 
-    output_folder = main_folder + f"General Tests\\Generated_Qrels_TSV\\{str(dataset)}_{dataset_name}\\"
+    dataset_output_folder = main_folder + f"{str(dataset)}_{dataset_name}" + "\\"
+
+    if not pu.check_folder_existence(reshuffled_dataset_folder):
+        print(f"Dataset Folder {reshuffled_dataset_folder} not found")
+        return
 
     # Ensure the output folder exists
-    os.makedirs(output_folder, exist_ok=True)
+    os.makedirs(dataset_output_folder, exist_ok=True)
 
-    test_files = PathUtils.find_test_files(reshuffled_dataset_folder)
+    test_files = pu.find_test_files(reshuffled_dataset_folder)
 
     OG_train_loader, OG_val_loader, OG_test_loader = create_og_loaders(reshuffled_dataset_folder)
     # OG_manager = TripleManager(OG_test_loader, OG_train_loader, OG_val_loader)
@@ -35,7 +52,7 @@ def generate_qrels(dataset):
 
     for test_file in test_files:
 
-        reshuffle_ID = PathUtils.get_reshuffleId(test_file, "test")
+        reshuffle_ID = pu.get_reshuffleId(test_file, "test")
 
         main_loader = DataLoader(reshuffled_dataset_folder + reshuffle_ID, "test")
         manager = TripleManager(main_loader, OG_train_loader, OG_val_loader, OG_test_loader) # Very slow
@@ -43,7 +60,7 @@ def generate_qrels(dataset):
 
         print("\tMain Data Loaded and Main TripleManager Created")
 
-        output_files = PathUtils.get_policy_output_files(dataset, test_file, output_folder)
+        output_files = pu.get_policy_output_files(dataset, test_file, dataset_output_folder)
 
 
 
@@ -81,7 +98,7 @@ def sort_test_files(files):
 
 def create_og_loaders(dataset_folder):
 
-    train_file, val_file, test_file = PathUtils.get_original_files(dataset_folder)
+    train_file, val_file, test_file = pu.get_original_files(dataset_folder)
 
     train_loader = DataLoader(train_file, "train")
     val_loader = DataLoader(val_file, "valid")
@@ -96,6 +113,11 @@ def main():
     test_datasets = [3]
 
     for dataset in test_datasets:
+
+        # Skip if the dataset number goes out of range
+        if DatasetUtils.get_dataset_name(dataset) == "":
+            continue
+
         start_time = time.time()
 
         generate_qrels(dataset)

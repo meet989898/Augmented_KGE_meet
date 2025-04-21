@@ -1,13 +1,5 @@
-import glob
-import os
-import csv
-import re
-import sys
+import PathUtils as pu
 import numpy as np
-
-from TripleManager import TripleManager
-from DataLoader import DataLoader
-import DatasetUtils
 import time
 
 
@@ -25,14 +17,14 @@ def generate_qrels_tsv(manager, output_files):
     :param manager: Triple Manager object.
     """
 
-    relavance_map = {
-        "LCWA": 0,
-        "nonsensical": 1,
-        "sensical": 4,
-        "one-hop sensical": 3,
-        "one-hop nonsensical": 2,
-        "positive": 5
-    }
+    # relavance_map = {
+    #     "LCWA": 0,
+    #     "nonsensical": 1,
+    #     "sensical": 4,
+    #     "one-hop sensical": 3,
+    #     "one-hop nonsensical": 2,
+    #     "positive": 5
+    # }
 
     RELEVANCE_MAP = {
         "LCWA": 0,
@@ -47,9 +39,12 @@ def generate_qrels_tsv(manager, output_files):
         "LCWA", "nonsensical", "one-hop nonsensical", "one-hop sensical", "sensical"
     ]
 
-    POLICIES = ["max", "min", "avg"]
+    # POLICIES = ["max", "min", "avg"]
 
     STRATEGY_IDX = {strategy: idx for idx, strategy in enumerate(CORRUPTION_STRATEGIES)}
+
+    POLICIES = ["max", "min", "avg_floor", "avg_ceil"]
+    POLICY_IDX = {p: i for i, p in enumerate(POLICIES)}
 
     # dataset_name = DatasetUtils.get_dataset_name(dataset)
 
@@ -144,10 +139,18 @@ def generate_qrels_tsv(manager, output_files):
     # Preallocate reusable relevance matrix
     rel_matrix = np.zeros((num_strategies, entity_count), dtype=int)
 
-    # Clear all qrels files at the beginning
+    # Clear all qrels files at the beginning, this won't work if we want to resume
     for file in output_files:
         with open(file, "w", newline='') as f:
             pass  # just truncates the file
+
+    # Prepare in-memory storage
+    result_dict = {
+        output_files[0]: [],  # max
+        output_files[1]: [],  # min
+        output_files[2]: [],  # avg_floor
+        output_files[3]: []  # avg_ceil
+    }
 
     for h, r, t in manager.get_triples():
 
@@ -257,13 +260,8 @@ def generate_qrels_tsv(manager, output_files):
                         rel_matrix[row_idx][col_idx] = RELEVANCE_MAP[strategy]
 
             if true_entity in ent_idx_map:
-                for file, score in zip(
-                        output_files,
-                        [RELEVANCE_MAP['positive']] * 4
-                ):
-                    with open(file, "a", newline='') as f:
-                        writer = csv.writer(f, delimiter='\t')
-                        writer.writerow([query_id, true_entity, score])
+                for file in result_dict:
+                    result_dict[file].append([query_id, true_entity, RELEVANCE_MAP['positive']])
 
             # Vectorized resolution
             nonzero_mask = np.any(rel_matrix > 0, axis=0)
@@ -281,19 +279,108 @@ def generate_qrels_tsv(manager, output_files):
             # compute this like a cube
             for idx, e_idx in enumerate(col_indices):
                 e = entity_list[e_idx]
-                rows = [
-                    (output_files[0], int(max_vals[idx])),
-                    (output_files[1], int(min_vals[idx])),
-                    (output_files[2], int(avg_vals[idx])),
-                    (output_files[3], int(avg_vals_ceil[idx]))
-                ]
-                for fname, score in rows:
-                    with open(fname, "a", newline='') as f:
-                        writer = csv.writer(f, delimiter='\t')
-                        writer.writerow([query_id, e, score])
+                result_dict[output_files[0]].append([query_id, e, int(max_vals[idx])])
+                result_dict[output_files[1]].append([query_id, e, int(min_vals[idx])])
+                result_dict[output_files[2]].append([query_id, e, int(avg_vals[idx])])
+                result_dict[output_files[3]].append([query_id, e, int(avg_vals_ceil[idx])])
+
+    # Write all results after computation
+    for file, rows in result_dict.items():
+        pu.write_qrel_rows(file, rows)
 
     print("Qrels written successfully.")
 
+
+def generate_qrels_tsv_cube(manager, output_files):
+    """
+    Generates a TSV file containing qrels based on different corruption strategies.
+    :param output_files: All the policy related output files
+    :param manager: Triple Manager object.
+    """
+    RELEVANCE_MAP = {
+        "LCWA": 0,
+        "nonsensical": 1,
+        "one-hop nonsensical": 2,
+        "one-hop sensical": 3,
+        "sensical": 4,
+        "positive": 5
+    }
+
+    CORRUPTION_STRATEGIES = [
+        "LCWA", "nonsensical", "one-hop nonsensical", "one-hop sensical", "sensical"
+    ]
+
+    STRATEGY_IDX = {strategy: idx for idx, strategy in enumerate(CORRUPTION_STRATEGIES)}
+
+    POLICIES = ["max", "min", "avg_floor", "avg_ceil"]
+    POLICY_IDX = {p: i for i, p in enumerate(POLICIES)}
+
+    print(f"\tFinding corrupted Qrels for {len(manager.get_triples())} triples")
+
+    entity_list = manager.entities
+    entity_count = len(entity_list)
+    ent_idx_map = {e: i for i, e in enumerate(entity_list)}
+    num_strategies = len(CORRUPTION_STRATEGIES)
+
+    rel_matrix = np.zeros((num_strategies, entity_count), dtype=int)
+
+    result_cube = {}  # {query_id: cube [4, 5, num_entities]}
+
+    for i, (h, r, t) in enumerate(manager.get_triples(), 1):
+        print(f"Positive {i}: ({h}, {r}, {t})")
+
+        queries = [(f"({h},{r},{t})-h", "head", h), (f"({h},{r},{t})-t", "tail", t)]
+
+        for query_id, direction, true_entity in queries:
+            rel_matrix.fill(0)
+
+            for strategy in CORRUPTION_STRATEGIES:
+                if strategy == "LCWA":
+                    continue
+                corrupted = manager.get_corrupted(h, r, t, direction, strategy)
+                row_idx = STRATEGY_IDX[strategy]
+                for e in corrupted:
+                    col_idx = ent_idx_map.get(e, -1)
+                    if col_idx != -1:
+                        rel_matrix[row_idx][col_idx] = RELEVANCE_MAP[strategy]
+
+            cube = np.zeros((4, num_strategies, entity_count), dtype=int)
+            if true_entity in ent_idx_map:
+                true_idx = ent_idx_map[true_entity]
+                for policy in POLICY_IDX:
+                    cube[POLICY_IDX[policy], :, true_idx] = RELEVANCE_MAP['positive']
+
+            nonzero_mask = np.any(rel_matrix > 0, axis=0)
+            rel_matrix_nonzero = rel_matrix[:, nonzero_mask]
+            col_indices = np.where(nonzero_mask)[0]
+
+            if rel_matrix_nonzero.shape[1] > 0:
+                max_vals = np.max(rel_matrix_nonzero, axis=0)
+                min_vals = np.min(rel_matrix_nonzero, axis=0)
+                avg_vals = np.floor(np.sum(rel_matrix_nonzero, axis=0) / np.count_nonzero(rel_matrix_nonzero, axis=0))
+                avg_vals_ceil = np.ceil(np.sum(rel_matrix_nonzero, axis=0) / np.count_nonzero(rel_matrix_nonzero, axis=0))
+
+                for idx, e_idx in enumerate(col_indices):
+                    for s in range(num_strategies):
+                        cube[POLICY_IDX['max'], s, e_idx] = max_vals[idx]
+                        cube[POLICY_IDX['min'], s, e_idx] = min_vals[idx]
+                        cube[POLICY_IDX['avg_floor'], s, e_idx] = int(avg_vals[idx])
+                        cube[POLICY_IDX['avg_ceil'], s, e_idx] = int(avg_vals_ceil[idx])
+
+            result_cube[query_id] = cube
+
+    result_dict = {output_files[i]: [] for i in range(4)}
+    for query_id, cube in result_cube.items():
+        for policy, idx in POLICY_IDX.items():
+            for s in range(num_strategies):
+                for e_idx, score in enumerate(cube[idx][s]):
+                    if score > 0:
+                        result_dict[output_files[idx]].append([query_id, entity_list[e_idx], score])
+
+    for file, rows in result_dict.items():
+        pu.write_qrel_rows(file, rows)
+
+    print("Qrels written successfully.")
 
 def main():
     test_datasets = [i for i in range(11)]

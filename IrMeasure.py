@@ -5,13 +5,14 @@ import time
 from TripleManager import TripleManager
 from DataLoader import DataLoader
 import DatasetUtils
+import PathUtils as pu
 import GenerateQrels
 import sys
 import os
 import csv
 
 
-def generate_queries_and_qrels(dataset_path, sample_size=10):
+def generate_queries_and_qrels_old(dataset_path, sample_size=10):
     """
     Generates queries (head/tail corruptions) and relevance judgments (qrels).
     :param dataset_path: Path to dataset.
@@ -73,12 +74,12 @@ def generate_queries_and_qrels(dataset_path, sample_size=10):
     return queries, qrels, run
 
 
-def evaluate_ir_system(dataset_path):
+def evaluate_ir_system_old(dataset_path):
     """
     Evaluates retrieval performance using ir-measures.
     :param dataset_path: Path to dataset.
     """
-    queries, qrels, run = generate_queries_and_qrels(dataset_path)
+    queries, qrels, run = generate_queries_and_qrels_old(dataset_path)
 
     # Convert queries/qrels into expected IR format
     qrels_dict = {q: {str(doc): score for doc, _, _, score in qrels} for q in queries}
@@ -98,7 +99,7 @@ def evaluate_ir_system(dataset_path):
         print(f"{measure}: {value:.4f}")
 
 
-def load_top_k_scores(file_path):
+def load_top_k_scores_old(file_path):
     """
     Parses the Top-K Scores file and extracts queries, document IDs, and model scores.
     :param file_path: Path to the Top-K Scores file.
@@ -136,7 +137,7 @@ def load_top_k_scores(file_path):
     return qrels, run
 
 
-def evaluate_ir_from_top_k_old(directory_path):
+def evaluate_ir_from_top_k_v_old(directory_path):
     """
     Evaluates retrieval performance using Top-K Scores data.
     :param top_k_file: Path to the Top-K Scores file.
@@ -148,7 +149,7 @@ def evaluate_ir_from_top_k_old(directory_path):
         if filename.endswith(".tsv"):  # Only process TSV files
             file_path = os.path.join(directory_path, filename)
             print(f"Processing {filename}...")
-            qrels, run = load_top_k_scores(file_path)
+            qrels, run = load_top_k_scores_old(file_path)
             all_qrels.extend(qrels)
             all_run.extend(run)
 
@@ -236,7 +237,7 @@ def load_run(run_file):
     return run_dict
 
 
-def evaluate_ir_from_top_k(run_path, qrel_path):
+def evaluate_ir_from_top_k_old(run_path, qrel_path):
     """
     Evaluates retrieval performance using Top-K Scores data.
     :param qrel_path: Folder from where relevance scores are fetched
@@ -291,6 +292,81 @@ def evaluate_ir_from_top_k(run_path, qrel_path):
         print(f"IR Evaluation Results saved to {output_file}")
 
 
+def evaluate_ir_from_top_k(run_path, qrel_path, dataset_name, output_json_path):
+    qrels_dict = load_qrels(qrel_path)
+
+    # Define evaluation measures
+    base_measures = [
+        ir_measures.AP, ir_measures.BPref, ir_measures.MAP, ir_measures.MRR, ir_measures.RR
+    ]
+
+    # at_k_measures = [ir_measures.P(rel=1), ir_measures.NDCG(rel=1), ir_measures.Recall(rel=1),
+    #                  ir_measures.Success(rel=1), ir_measures.R(rel=1)]
+
+    at_k_measures = [ir_measures.P, ir_measures.NDCG, ir_measures.Recall,
+                     ir_measures.Success, ir_measures.R]
+
+    k_values = [1, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90]
+
+    for k in range(100, 501, 50):
+        k_values.append(k)
+
+    print(k_values)
+
+    for k in k_values:
+        for measure in at_k_measures:
+            base_measures.append(measure @ k)
+
+    results_json = {
+        "metadata": {
+            "dataset": dataset_name,
+            "rel_threshold": 1,
+            "k_values": k_values,
+            "metrics": [str(m) for m in base_measures],
+            "model": "boxe"
+        },
+        "results": {}
+    }
+
+    results_json["metadata"]["relevance"] = {
+        "LCWA": 0,
+        "nonsensical": 1,
+        "one-hop nonsensical": 2,
+        "one-hop sensical": 3,
+        "sensical": 4,
+        "positive": 5
+    }
+
+    results_json["metadata"]["hyperparameters"] = {
+        "compatible_threshold": 0.75,
+        "similarity_method": "overlap",  # or dice/jaccard/etc.
+        "alpha": 0.5,
+        "beta": 0.5
+    }
+
+    for filename in os.listdir(run_path):
+        if not filename.endswith(".tsv"):
+            continue
+
+        if filename != "boxe_resplit__0_bottom.tsv" and filename != "boxe_resplit__0_top.tsv":
+            continue
+
+        print(f"Processing {filename}...")
+        run_dict = load_run(os.path.join(run_path, filename))
+        eval_result = ir_measures.calc_aggregate(base_measures, qrels_dict, run_dict)
+
+        parsed = pu.parse_run_filename(filename)
+        results_json["results"][filename] = {
+            **parsed,
+            "metrics": {
+                str(measure): float(f"{value:.4f}") for measure, value in eval_result.items()
+            }
+        }
+
+    pu.write_json_file(output_json_path, results_json)
+    print(f"IR Evaluation Results written to {output_json_path}")
+
+
 def test_ir_measure(dataset):
     dataset_name = DatasetUtils.get_dataset_name(dataset)
 
@@ -301,10 +377,10 @@ def test_ir_measure(dataset):
     path = folder + "Datasets/" + dataset_name + "/"
 
     # validate_negatives(path)
-    evaluate_ir_system(path)
+    evaluate_ir_system_old(path)
 
 
-def qrel_file_path(dataset):
+def qrel_file_path_generate(dataset):
 
     folder = "D:\\Masters\\RIT\\Semesters\\Sem 4\\RA\\Augmented KGE\\General Tests\\Generated_Qrels_TSV\\"
 
@@ -344,7 +420,6 @@ def analyze_qrels_conflicts(qrels_file, output_summary):
             else:
                 conflicts[key] = relevance
 
-
     print(f"Found {len(conflicting_pairs)} conflicting pairs...")
 
     # Identify conflicting entries
@@ -362,17 +437,29 @@ def analyze_qrels_conflicts(qrels_file, output_summary):
 def main():
     test_datasets = [3]
 
-    dataset_path = "D:\\Masters\\RIT\\Semesters\\Sem 4\\RA\\Augmented KGE\\General Tests\\TopK_Scores\\3"
+    TopK_Scores_folder = "D:\\Masters\\RIT\\Semesters\\Sem 4\\RA\\Augmented KGE\\General Tests\\TopK_Scores\\"
+
+    Generated_Qrels_folder = "D:\\Masters\\RIT\\Semesters\\Sem 4\\RA\\Augmented KGE\\General Tests\\Generated_Qrels_TSV\\"
+
+    Output_folder = "D:\\Masters\\RIT\\Semesters\\Sem 4\\RA\\Augmented KGE\\General Tests\\IR_Measures\\"
 
     for dataset in test_datasets:
         start_time = time.time()
 
+        dataset_path = TopK_Scores_folder + f"{dataset}"
+
+        dataset_name = DatasetUtils.get_dataset_name(dataset)
+
+        qrel_file_path = Generated_Qrels_folder + f"{dataset}_{dataset_name}\\3_NELL-995_0_resplit_qrels_Avg_Ceil.tsv"
+
+        dataset_output_path = Output_folder + f"{dataset}_{dataset_name}\\IR_Measures_Results.json"
+
         # test_ir_measure(dataset)
         # GenerateQrels.generate_qrels_tsv(dataset)
-        # evaluate_ir_from_top_k(dataset_path, qrel_file_path(dataset))
+        evaluate_ir_from_top_k(dataset_path, qrel_file_path, dataset_name, dataset_output_path)
 
         # load_qrels(qrel_file_path(dataset))
-        print(count_lines_in_tsv(qrel_file_path(dataset))) # 199976994 ~ 200 Million
+        # print(count_lines_in_tsv(qrel_file_path(dataset))) # 199976994 ~ 200 Million
 
         # analyze_qrels_conflicts(qrel_file_path(dataset), f"{dataset}_qrel_conflicts.txt")
 
