@@ -207,6 +207,29 @@ def load_qrels(qrels_file):
     return qrels_dict
 
 
+def load_qrels_from_dict(qrel_rows):
+    """
+    Converts a qrel-style list of [query_id, doc_id, relevance] into a dictionary.
+
+    :param qrel_rows: List of [query_id, doc_id, relevance]
+    :return: Dictionary {query_id: {doc_id: relevance_score}}
+    """
+    print("Loading qrels...")
+    qrels_dict = {}
+    for query_id, doc_id, rel in qrel_rows:
+        query_id = str(query_id)
+        doc_id = str(doc_id)
+        rel = int(rel)
+
+        if query_id not in qrels_dict:
+            qrels_dict[query_id] = {}
+        qrels_dict[query_id][doc_id] = rel
+
+    print("Qrels loaded.")
+    return qrels_dict
+
+
+
 def load_run(run_file):
     """
     Loads retrieval run data from a TSV file.
@@ -292,6 +315,9 @@ def evaluate_ir_from_top_k_old(run_path, qrel_path):
         print(f"IR Evaluation Results saved to {output_file}")
 
 
+def calculate_irmeasures():
+
+
 def evaluate_ir_from_top_k(run_path, qrel_path, dataset_name, output_json_path):
     qrels_dict = load_qrels(qrel_path)
 
@@ -323,7 +349,8 @@ def evaluate_ir_from_top_k(run_path, qrel_path, dataset_name, output_json_path):
             "rel_threshold": 1,
             "k_values": k_values,
             "metrics": [str(m) for m in base_measures],
-            "model": "boxe"
+            "model": "boxe",
+            "Top/Bottom": ""
         },
         "results": {}
     }
@@ -350,6 +377,8 @@ def evaluate_ir_from_top_k(run_path, qrel_path, dataset_name, output_json_path):
 
         if filename != "boxe_resplit__0_bottom.tsv" and filename != "boxe_resplit__0_top.tsv":
             continue
+
+        results_json["metadata"]["Top/Bottom"] = "Top" if "top" in filename else "Bottom"
 
         print(f"Processing {filename}...")
         run_dict = load_run(os.path.join(run_path, filename))

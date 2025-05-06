@@ -3,11 +3,17 @@ import time
 from DataLoader import DataLoader
 from TripleManager import TripleManager
 import GenerateQrels
+import IrMeasure
 import DatasetUtils
 import PathUtils as pu
 import os
 import glob
 import re
+
+# Write Qrels to file?
+WRITE_QREL_TO_FILE = False
+
+
 
 # Define the main 3 folders to be used here to generate the qrels
 main_folder = "D:\\Masters\\RIT\\Semesters\\Sem 4\\RA\\Augmented KGE\\General Tests\\"
@@ -23,6 +29,8 @@ if not pu.check_folder_existence(reshuffled_all_datasets_folder):
 
 # Ensure the output folder exists - if not created, it's fine. New folder created here
 os.makedirs(output_folder, exist_ok=True)
+
+model = ["boxe"]
 
 
 def generate_qrels(dataset):
@@ -76,7 +84,9 @@ def generate_qrels(dataset):
         # print(f"Processing {filename}")
         # sys.exit()
 
-        GenerateQrels.generate_qrels_tsv(manager, output_files)
+        qrels = GenerateQrels.generate_qrels_tsv(manager, output_files, WRITE_QREL_TO_FILE)
+
+        IrMeasure.
         break
 
 
