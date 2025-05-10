@@ -10,9 +10,10 @@ def resolve_policies(row):
     return int(max_val), int(min_val), int(np.floor(avg_val)), int(np.ceil(avg_val))
 
 
-def generate_qrels_tsv(manager, output_files):
+def generate_qrels_tsv(manager, output_files, WRITE=False):
     """
     Generates a TSV file containing qrels based on different corruption strategies.
+    :param WRITE: Flag to decide if we want to write the file or just return the dictionary
     :param output_files: All the policy related output files
     :param manager: Triple Manager object.
     """
@@ -127,7 +128,7 @@ def generate_qrels_tsv(manager, output_files):
         # with open(output_tsv, 'w', newline='', encoding='utf-8') as file:
         #     writer = csv.writer(file, delimiter='\t')
 
-    print(f"\tFinding corrupted Qrels for {len(manager.get_triples())} triples")
+    # print(f"\tFinding corrupted Qrels for {len(manager.get_triples())} triples")
 
     i = 1
 
@@ -154,7 +155,7 @@ def generate_qrels_tsv(manager, output_files):
 
     for h, r, t in manager.get_triples():
 
-        print(f"Positive {i}: ({h}, {r}, {t})")
+        # print(f"Positive {i}: ({h}, {r}, {t})")
 
         i += 1
         #
@@ -284,11 +285,14 @@ def generate_qrels_tsv(manager, output_files):
                 result_dict[output_files[2]].append([query_id, e, int(avg_vals[idx])])
                 result_dict[output_files[3]].append([query_id, e, int(avg_vals_ceil[idx])])
 
-    # Write all results after computation
-    for file, rows in result_dict.items():
-        pu.write_qrel_rows(file, rows)
+    if WRITE:
+        # Write all results after computation
+        for file, rows in result_dict.items():
+            pu.write_qrel_rows(file, rows)
 
-    print("Qrels written successfully.")
+    # print("Qrels Generated successfully.")
+
+    return result_dict
 
 
 def generate_qrels_tsv_cube(manager, output_files):
@@ -381,6 +385,7 @@ def generate_qrels_tsv_cube(manager, output_files):
         pu.write_qrel_rows(file, rows)
 
     print("Qrels written successfully.")
+
 
 def main():
     test_datasets = [i for i in range(11)]

@@ -27,7 +27,7 @@ class DataLoader(object):
         self.triple_list = []
         self.import_file(path + split_type + "2id.txt")
 
-        print(f"DL {split_type} Created")
+        # print(f"DL {split_type} Created")
 
     def import_file(self, file_path):
         with open(file_path) as fp:

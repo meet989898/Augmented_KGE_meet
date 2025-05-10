@@ -7,7 +7,7 @@ import time
 
 
 class TripleManager:
-    def __init__(self, main_loader, *secondary_loaders):
+    def __init__(self, main_loader, *secondary_loaders, compatible_threshold=0.75, similarity_method="overlap", alpha=0.5, beta=0.5):
         """
         Initializes the TripleManager with a main data loader and optional secondary loaders.
 
@@ -24,6 +24,10 @@ class TripleManager:
         self.range = defaultdict(set)
         self.entities = np.array(list(main_loader.entities))  # Convert to NumPy array for efficiency? Still testing
 
+        # variables for compatibility stuff
+        self.threshold = compatible_threshold
+        self.similarity_method = similarity_method
+
         # Unioning all structures
         self._aggregate_structures()
 
@@ -31,11 +35,14 @@ class TripleManager:
         self._convert_to_numpy()
 
         # Generate compatible relations using existing dictionaries
-        generator = CompatibleRelationsGenerator(self.head_dict, self.tail_dict, self.domain, self.range, 0.75)
+        generator = CompatibleRelationsGenerator(self.head_dict, self.tail_dict, self.domain, self.range)
         # generator.generate() # This is for when we want to use the default values and save file
         # This is where it takes the parameters for the compatible relations
         # Parameters like Threshold and Method0
-        generator.compute_compatible_relations()
+        generator.compute_compatible_relations(threshold=compatible_threshold,
+                                               method=similarity_method,
+                                               alpha=alpha,
+                                               beta=beta)
 
         self.dom_dom = generator.domDomCompatible
         self.dom_ran = generator.domRanCompatible
@@ -45,7 +52,7 @@ class TripleManager:
         # Get the pre-made compatible relations dictionaries
         self.compatible_relations = self._build_compatible_relations()
 
-        print(f"TM {main_loader.split_type} Created")
+        # print(f"TM {main_loader.split_type} Created")
 
     def _aggregate_structures(self):
         """Precomputes the union of domains and relations from all provided loaders."""

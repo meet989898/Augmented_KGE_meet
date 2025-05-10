@@ -69,8 +69,8 @@ class CompatibleRelationsGenerator:
                 if range_overlap > threshold:
                     self.ranRanCompatible[r1].append(r2)
 
-        for key, value in self.domDomCompatible.items():
-            print(type(key), key, type(value), value)
+        # for key, value in self.domDomCompatible.items():
+        #     print(type(key), key, type(value), value)
 
     # ---------------------------------------------------------------
     # Overlap Coefficient:

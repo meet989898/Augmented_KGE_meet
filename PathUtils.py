@@ -30,6 +30,11 @@ def get_path(dataset_name, file_key):
     return FILE_TEMPLATES[file_key].format(base=base)
 
 
+def print_json(text, json_dict):
+    # Print metadata once, in a single line
+    print(text + ":", json.dumps(json_dict, separators=(',', ':')))
+
+
 def get_test_files(dataset_name, reshuffled=False):
     """
     Returns all test2id.txt files (e.g., 0_test2id.txt ... 25_test2id.txt) if reshuffled=True,
@@ -43,6 +48,15 @@ def get_test_files(dataset_name, reshuffled=False):
         return [os.path.join(base, "test2id.txt")]
 
 
+def get_run_files(run_file_path):
+    return [file for file in os.listdir(run_file_path)]
+
+def get_only_id(reshuffle_name):
+
+    if "resplit" in reshuffle_name:
+        return reshuffle_name.split("_resplit")[0]
+
+
 def find_test_files(dataset_folder):
     # Find all test2id files (e.g., 0_test2id.txt to 25_test2id.txt)
     test_files = [
@@ -50,7 +64,7 @@ def find_test_files(dataset_folder):
         if os.path.basename(f)[0].isdigit()
     ]
 
-    print(f"\tFound {len(test_files)} test files")
+    # print(f"\tFound {len(test_files)} test files")
     # test_files = sorted(test_files, key=lambda x: int(os.path.basename(x).split("_")[0]))  # sort by index
     return _sort_test_files(test_files)
 
@@ -66,7 +80,7 @@ def _sort_test_files(files):
 
 def get_reshuffleId(test_file, split_type):
     base_name = os.path.basename(test_file)
-    print(f"\tProcessing {base_name}")
+    # print(f"\tProcessing {base_name}")
 
     reshuffle_id = None
 
@@ -74,6 +88,12 @@ def get_reshuffleId(test_file, split_type):
         reshuffle_id = base_name.split(f"_{split_type}")[0] + "_"
 
     return reshuffle_id
+
+
+def get_basename(filename):
+    base_name = os.path.basename(filename)
+
+    return base_name
 
 
 def get_entities(path):
@@ -105,40 +125,40 @@ def get_original_files(dataset_folder):
         f for f in glob.glob(os.path.join(dataset_folder, "*train2id.txt"))
         if re.match(r"^[A-Za-z]", os.path.basename(f))
     ]
-    print(f"\tFound {len(train_file)} original train files")
+    # print(f"\tFound {len(train_file)} original train files")
 
     train_reshuffle_id = get_reshuffleId(train_file[0], "train")
     if train_reshuffle_id:
         train_file = dataset_folder + train_reshuffle_id
     else:
         train_file = dataset_folder
-    print(f"\tFound {train_file}")
+    # print(f"\tFound {train_file}")
 
     val_file = [
         f for f in glob.glob(os.path.join(dataset_folder, "*valid2id.txt"))
         if re.match(r"^[A-Za-z]", os.path.basename(f))
     ]
-    print(f"\tFound {len(val_file)} original validation files")
+    # print(f"\tFound {len(val_file)} original validation files")
 
     val_reshuffle_id = get_reshuffleId(val_file[0], "valid")
     if val_reshuffle_id:
         val_file = dataset_folder + val_reshuffle_id
     else:
         val_file = dataset_folder
-    print(f"\tFound {val_file}")
+    # print(f"\tFound {val_file}")
 
     test_file = [
         f for f in glob.glob(os.path.join(dataset_folder, "*test2id.txt"))
         if re.match(r"^[A-Za-z]", os.path.basename(f))
     ]
-    print(f"\tFound {len(test_file)} original test files")
+    # print(f"\tFound {len(test_file)} original test files")
 
     test_reshuffle_id = get_reshuffleId(test_file[0], "test")
     if test_reshuffle_id:
         test_file = dataset_folder + test_reshuffle_id
     else:
         test_file = dataset_folder
-    print(f"\tFound {test_file}")
+    # print(f"\tFound {test_file}")
 
     return train_file, val_file, test_file
 
@@ -186,25 +206,51 @@ def write_json_file(file_path, data):
 
 def parse_run_filename(filename):
     """
-    Parses the run filename to extract model, resplit index, and partition (top/bottom).
+    Parses a filename like 'boxe_resplit__0_bottom.tsv' into its components
+    using basic string splitting.
 
-    :param filename: e.g., 'boxe_resplit__23_top.tsv'
-    :return: dict with model, resplit, partition, filename
+    :param filename: Full filename or path
+    :return: dict with model, resplit, partition, and filename
     """
     base = os.path.basename(filename)
-    match = re.match(r"(?P<model>[^_]+)_resplit__?(?P<resplit>\\d+)_?(?P<partition>top|bottom)?\\.tsv", base)
+    name = base.replace('.tsv', '')
 
-    if match:
-        return {
-            "filename": base,
-            "model": match.group("model"),
-            "resplit": match.group("resplit"),
-            "partition": match.group("partition") or "unknown"
-        }
-    else:
-        return {
-            "filename": base,
-            "model": "unknown",
-            "resplit": "unknown",
-            "partition": "unknown"
-        }
+    parts = name.split('_resplit__')
+    if len(parts) != 2:
+        return {"filename": base, "model": "unknown", "resplit": "unknown", "partition": "unknown"}
+
+    model = parts[0]
+    rest = parts[1].split('_')
+
+    resplit = rest[0] if len(rest) >= 1 else "unknown"
+    partition = rest[1] if len(rest) == 2 else "unknown"
+
+    return {
+        "filename": base,
+        "model": model,
+        "resplit": resplit,
+        "partition": partition
+    }
+
+
+def get_policy_from_filename(filename):
+    """
+    Extracts the policy name from a qrels filename like:
+    '3_NELL-995_0_Qrels_avg_ceil.tsv'
+
+    :param filename: Full filename or path
+    :return: policy name as string (e.g., 'avg_ceil')
+    """
+    base = os.path.basename(filename)
+    name = base.replace('.tsv', '')
+
+    parts = name.split('_Qrels_')
+    if len(parts) == 2:
+        return parts[1]
+    return "unknown"
+
+
+
+
+
+# print(parse_run_filename("toruse_eL2_resplit__20_bottom.tsv"))

@@ -8,7 +8,7 @@ import DatasetUtils
 import PathUtils as pu
 import GenerateQrels
 import sys
-import os
+# import os
 import csv
 
 
@@ -214,20 +214,19 @@ def load_qrels_from_dict(qrel_rows):
     :param qrel_rows: List of [query_id, doc_id, relevance]
     :return: Dictionary {query_id: {doc_id: relevance_score}}
     """
-    print("Loading qrels...")
+    # print("Loading qrels...")
     qrels_dict = {}
     for query_id, doc_id, rel in qrel_rows:
         query_id = str(query_id)
-        doc_id = str(doc_id)
+        doc_id = str(int(float(doc_id)))
         rel = int(rel)
 
         if query_id not in qrels_dict:
             qrels_dict[query_id] = {}
         qrels_dict[query_id][doc_id] = rel
 
-    print("Qrels loaded.")
+    # print("Qrels loaded.")
     return qrels_dict
-
 
 
 def load_run(run_file):
@@ -236,7 +235,7 @@ def load_run(run_file):
     :param run_file: Path to the run TSV file.
     :return: Dictionary of run {query_id: {doc_id: model_score}}
     """
-    print("Loading run...")
+    # print("Loading run...")
     run_dict = {}
 
     # with open(run_file, 'r', encoding='utf-8') as file:
@@ -251,12 +250,12 @@ def load_run(run_file):
         for line in file:
             parts = line.strip().split()
             query_id, doc_id, score = parts
-        # for query_id, doc_id, score in reader:
+            # for query_id, doc_id, score in reader:
             if query_id not in run_dict:
                 run_dict[query_id] = {}
             run_dict[query_id][str(int(float(doc_id)))] = float(score)
 
-    print("Run loaded.")
+    # print("Run loaded.")
     return run_dict
 
 
@@ -298,7 +297,8 @@ def evaluate_ir_from_top_k_old(run_path, qrel_path):
                 ]
 
                 # Measures that support @K
-                at_k_measures = [ir_measures.P, ir_measures.NDCG, ir_measures.Recall, ir_measures.Success, ir_measures.R]
+                at_k_measures = [ir_measures.P, ir_measures.NDCG, ir_measures.Recall, ir_measures.Success,
+                                 ir_measures.R]
 
                 # Extend @K evaluations from 10 to 50 - 100
                 for k in range(10, 60, 10):
@@ -315,11 +315,18 @@ def evaluate_ir_from_top_k_old(run_path, qrel_path):
         print(f"IR Evaluation Results saved to {output_file}")
 
 
-def calculate_irmeasures():
+def calculate_ir_measures(test_file,
+                          run_path,
+                          qrels,
+                          dataset_name,
+                          output_json_path,
+                          threshold,
+                          method,
+                          models,
+                          WRITE=False):
+    models = set(models)
 
-
-def evaluate_ir_from_top_k(run_path, qrel_path, dataset_name, output_json_path):
-    qrels_dict = load_qrels(qrel_path)
+    reshuffle_ID = pu.get_reshuffleId(test_file, "test")
 
     # Define evaluation measures
     base_measures = [
@@ -337,8 +344,6 @@ def evaluate_ir_from_top_k(run_path, qrel_path, dataset_name, output_json_path):
     for k in range(100, 501, 50):
         k_values.append(k)
 
-    print(k_values)
-
     for k in k_values:
         for measure in at_k_measures:
             base_measures.append(measure @ k)
@@ -346,11 +351,11 @@ def evaluate_ir_from_top_k(run_path, qrel_path, dataset_name, output_json_path):
     results_json = {
         "metadata": {
             "dataset": dataset_name,
+            "test_file": pu.get_basename(test_file),
+            "reshuffle_id": pu.get_only_id(reshuffle_ID),
             "rel_threshold": 1,
             "k_values": k_values,
             "metrics": [str(m) for m in base_measures],
-            "model": "boxe",
-            "Top/Bottom": ""
         },
         "results": {}
     }
@@ -365,35 +370,66 @@ def evaluate_ir_from_top_k(run_path, qrel_path, dataset_name, output_json_path):
     }
 
     results_json["metadata"]["hyperparameters"] = {
-        "compatible_threshold": 0.75,
-        "similarity_method": "overlap",  # or dice/jaccard/etc.
+        "compatible_threshold": threshold,
+        "similarity_method": method,  # or dice/jaccard/etc.
         "alpha": 0.5,
         "beta": 0.5
     }
 
-    for filename in os.listdir(run_path):
+    # Print metadata once, in a single line
+    pu.print_json("Metadata", results_json["metadata"])
+    # print("METADATA", json.dumps(metadata, separators=(',', ':')))
+    # print(results_json["metadata"])
+
+    for output_file, qrel in qrels.items():
+        results_json = _evaluate_ir_from_top_k(reshuffle_ID, run_path, output_file, qrel,
+                                               results_json, base_measures, output_json_path,
+                                               models, WRITE)
+
+    if WRITE:
+        pu.write_json_file(output_json_path, results_json)
+        print(f"IR Evaluation Results written to {output_json_path}")
+
+
+def _evaluate_ir_from_top_k(reshuffle_ID, run_path, output_file, qrel,
+                            results_json, base_measures, output_json_path,
+                            models, WRITE=False):
+    # qrels_dict = load_qrels(qrel)
+    qrels_dict = load_qrels_from_dict(qrel)
+
+    policy = pu.get_policy_from_filename(output_file)
+
+    for filename in pu.get_run_files(run_path):
+
         if not filename.endswith(".tsv"):
             continue
 
-        if filename != "boxe_resplit__0_bottom.tsv" and filename != "boxe_resplit__0_top.tsv":
+        parsed = pu.parse_run_filename(filename)
+
+        model = parsed["model"]
+
+        if models and model not in models or parsed["resplit"] != pu.get_only_id(reshuffle_ID):
             continue
 
-        results_json["metadata"]["Top/Bottom"] = "Top" if "top" in filename else "Bottom"
-
-        print(f"Processing {filename}...")
-        run_dict = load_run(os.path.join(run_path, filename))
+        # print(f"Processing {filename}...")
+        run_dict = load_run(run_path + filename)
         eval_result = ir_measures.calc_aggregate(base_measures, qrels_dict, run_dict)
 
-        parsed = pu.parse_run_filename(filename)
-        results_json["results"][filename] = {
+        results_json["results"][f"{policy}_" + filename] = {
             **parsed,
+            "policy": policy,
             "metrics": {
                 str(measure): float(f"{value:.4f}") for measure, value in eval_result.items()
             }
         }
 
-    pu.write_json_file(output_json_path, results_json)
-    print(f"IR Evaluation Results written to {output_json_path}")
+        pu.print_json(f"Results_{policy}_{filename}", results_json["results"][f"{policy}_" + filename])
+        # print(results_json["results"][f"{policy}_" + filename])
+
+    # pu.write_json_file(output_json_path, results_json)
+    # print(f"IR Evaluation Results written to {output_json_path}")
+
+    return results_json
 
 
 def test_ir_measure(dataset):
@@ -410,7 +446,6 @@ def test_ir_measure(dataset):
 
 
 def qrel_file_path_generate(dataset):
-
     folder = "D:\\Masters\\RIT\\Semesters\\Sem 4\\RA\\Augmented KGE\\General Tests\\Generated_Qrels_TSV\\"
 
     dataset_name = DatasetUtils.get_dataset_name(dataset)
@@ -485,7 +520,7 @@ def main():
 
         # test_ir_measure(dataset)
         # GenerateQrels.generate_qrels_tsv(dataset)
-        evaluate_ir_from_top_k(dataset_path, qrel_file_path, dataset_name, dataset_output_path)
+        _evaluate_ir_from_top_k(dataset_path, qrel_file_path, dataset_name, dataset_output_path)
 
         # load_qrels(qrel_file_path(dataset))
         # print(count_lines_in_tsv(qrel_file_path(dataset))) # 199976994 ~ 200 Million
